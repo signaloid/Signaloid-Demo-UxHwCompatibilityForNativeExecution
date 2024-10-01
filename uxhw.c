@@ -555,13 +555,13 @@ UxHwFloatProbabilityGT(float value, float cutoff)
 }
 
 double
-UxHwDoubleCopyDistShape(double value)
+UxHwDoubleGetIndependentCopy(double value)
 {
 	return value;
 }
 
 float
-UxHwFloatCopyDistShape(float value)
+UxHwFloatGetIndependentCopy(float value)
 {
 	return value;
 }

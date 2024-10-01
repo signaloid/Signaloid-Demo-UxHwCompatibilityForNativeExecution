@@ -108,8 +108,8 @@ float	UxHwFloatSupportMax(float value);
 double	UxHwDoubleProbabilityGT(double value, double cutoff);
 float	UxHwFloatProbabilityGT(float value, float cutoff);
 
-double	UxHwDoubleCopyDistShape(double value);
-float	UxHwFloatCopyDistShape(float value);
+double	UxHwDoubleGetIndependentCopy(double value);
+float	UxHwFloatGetIndependentCopy(float value);
 
 double	UxHwDoubleLimitDistributionSupport(double value, double supportMin, double supportMax);
 float	UxHwFloatLimitDistributionSupport(float value, float supportMin, float supportMax);
