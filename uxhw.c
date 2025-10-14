@@ -26,6 +26,7 @@
 #include <float.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <time.h>
 #include <stddef.h>
 #include <sys/time.h>
@@ -601,17 +602,460 @@ UxHwFloatQuantile(float value, float quantileProbability)
 }
 
 double
-UxHwDoubleBayesLaplace(double (*likelihood)(double), double prior, double evidence)
+UxHwDoubleBayesLaplace(double (*evidenceModel)(void *, double), void *  evidenceModelArgs, double prior, double evidence)
 {
 	fprintf(stderr, "Warning: UxHwDoubleBayesLaplace is not supported in native execution mode! Returning prior...");
-	
+
 	return prior;
 }
 
 float
-UxHwFloatBayesLaplace(float (*likelihood)(float), float prior, float evidence)
+UxHwFloatBayesLaplace(float (*evidenceModel)(void *, float), void *  evidenceModelArgs, float prior, float evidence)
 {
 	fprintf(stderr, "Warning: UxHwFloatBayesLaplace is not supported in native execution mode! Returning prior...");
-	
+
 	return prior;
+}
+
+void
+UxHwFloatGeneratePath(
+	void *		parameterStructArray[],
+	size_t		numberOfParameterStructs,
+	size_t		pathLength,
+	size_t		numberOfStateVariables,
+	void		(*stateGeneratorFuncPtr)(void *  parameterStruct, float **  paths, size_t iterationStepCount, size_t numberOfStateVariables),
+	float ***	resultArray)
+{
+	/*
+	 *	Sanity checking	of input arguments
+	 */
+	if (pathLength == 0)
+	{
+		fprintf(stderr, "Error: UxHwFloatGeneratePath - Function must be called with a pathLength greater than 0.\n");
+
+		return;
+	}
+	if (numberOfStateVariables == 0)
+	{
+		fprintf(stderr, "Error: UxHwFloatGeneratePath - Function must be called with numberOfStateVariables greater than 0.\n");
+
+		return;
+	}
+	if (numberOfParameterStructs == 0)
+	{
+		fprintf(stderr, "Error: UxHwFloatGeneratePath - Function must be called with numberOfParameterStructs greater than 0.\n");
+
+		return;
+	}
+	if (stateGeneratorFuncPtr == NULL)
+	{
+		fprintf(stderr, "Error: UxHwFloatGeneratePath - stateGeneratorFuncPtr cannot be NULL.\n");
+
+		return;
+	}
+	if (parameterStructArray == NULL)
+	{
+		fprintf(stderr, "Error: UxHwFloatGeneratePath - parameterStructArray cannot be NULL.\n");
+
+		return;
+	}
+
+	if (resultArray == NULL)
+	{
+		fprintf(stderr, "Error: UxHwFloatGeneratePath - resultArray cannot be NULL.\n");
+
+		return;
+	}
+	for (size_t opt = 0; opt < numberOfParameterStructs; opt++)
+	{
+		if (resultArray[opt] == NULL)
+		{
+			fprintf(stderr, "Error: UxHwFloatGeneratePath - resultArray cannot contain NULL.\n");
+
+			return;
+		}
+
+		for (size_t step = 0; step < pathLength; step++)
+		{
+			if (resultArray[opt][step] == NULL)
+			{
+				fprintf(stderr, "Error: UxHwFloatGeneratePath - resultArray cannot contain NULL.\n");
+
+				return;
+			}
+		}
+	}
+
+	/*
+	 *	Loop through each set of parameters
+	 */
+	for (size_t ii = 0; ii < numberOfParameterStructs; ii++)
+	{
+		/*
+		 *	Call the stepping function the required number of times
+		 */
+		for (size_t step = 0; step < pathLength; step++)
+		{
+			stateGeneratorFuncPtr(parameterStructArray[ii], resultArray[ii], step, numberOfStateVariables);
+		}
+	}
+}
+
+void
+UxHwDoubleGeneratePath(
+	void *		parameterStructArray[],
+	size_t		numberOfParameterStructs,
+	size_t		pathLength,
+	size_t		numberOfStateVariables,
+	void		(*stateGeneratorFuncPtr)(void *  parameterStruct, double **  paths, size_t iterationStepCount, size_t numberOfStateVariables),
+	double ***	resultArray)
+{
+	/*
+	 *	Sanity checking	of input arguments
+	 */
+	if (pathLength == 0)
+	{
+		fprintf(stderr, "Error: UxHwDoubleGeneratePath - Function must be called with a pathLength greater than 0.\n");
+
+		return;
+	}
+	if (numberOfStateVariables == 0)
+	{
+		fprintf(stderr, "Error: UxHwDoubleGeneratePath - Function must be called with numberOfStateVariables greater than 0.\n");
+
+		return;
+	}
+	if (numberOfParameterStructs == 0)
+	{
+		fprintf(stderr, "Error: UxHwDoubleGeneratePath - Function must be called with numberOfParameterStructs greater than 0.\n");
+
+		return;
+	}
+	if (stateGeneratorFuncPtr == NULL)
+	{
+		fprintf(stderr, "Error: UxHwDoubleGeneratePath - stateGeneratorFuncPtr cannot be NULL.\n");
+
+		return;
+	}
+	if (parameterStructArray == NULL)
+	{
+		fprintf(stderr, "Error: UxHwDoubleGeneratePath - parameterStructArray cannot be NULL.\n");
+
+		return;
+	}
+
+	if (resultArray == NULL)
+	{
+		fprintf(stderr, "Error: UxHwDoubleGeneratePath - resultArray cannot be NULL.\n");
+
+		return;
+	}
+	for (size_t opt = 0; opt < numberOfParameterStructs; opt++)
+	{
+		if (resultArray[opt] == NULL)
+		{
+			fprintf(stderr, "Error: UxHwDoubleGeneratePath - resultArray cannot contain NULL.\n");
+
+			return;
+		}
+
+		for (size_t step = 0; step < pathLength; step++)
+		{
+			if (resultArray[opt][step] == NULL)
+			{
+				fprintf(stderr, "Error: UxHwDoubleGeneratePath - resultArray cannot contain NULL.\n");
+
+				return;
+			}
+		}
+	}
+
+	/*
+	 *	Loop through each set of parameters
+	 */
+	for (size_t ii = 0; ii < numberOfParameterStructs; ii++)
+	{
+		/*
+		 *	Call the stepping function the required number of times
+		 */
+		for (size_t step = 0; step < pathLength; step++)
+		{
+			stateGeneratorFuncPtr(parameterStructArray[ii], resultArray[ii], step, numberOfStateVariables);
+		}
+	}
+}
+
+void
+UxHwFloatGenerateConvergingPath(
+	void *		parameterStructArray[],
+	size_t		numberOfParameterStructs,
+	size_t		maxPathLength,
+	size_t		numberOfStateVariables,
+	bool		(*stateGeneratorFuncPtr)(void *  parameterStruct, float **  paths, size_t iterationStepCount, size_t numberOfStateVariables),
+	float **	resultArray)
+{
+	float **	paths;
+
+	/*
+	 *	Sanity checking	of input arguments
+	 */
+	if (maxPathLength == 0)
+	{
+		fprintf(stderr, "Error: UxHwFloatGenerateConvergingPath - Function must be called with a maxPathLength greater than 0.\n");
+
+		return;
+	}
+	if (numberOfStateVariables == 0)
+	{
+		fprintf(stderr, "Error: UxHwFloatGenerateConvergingPath - Function must be called with numberOfStateVariables greater than 0.\n");
+
+		return;
+	}
+	if (numberOfParameterStructs == 0)
+	{
+		fprintf(stderr, "Error: UxHwFloatGenerateConvergingPath - Function must be called with numberOfParameterStructs greater than 0.\n");
+
+		return;
+	}
+	if (stateGeneratorFuncPtr == NULL)
+	{
+		fprintf(stderr, "Error: UxHwFloatGenerateConvergingPath - stateGeneratorFuncPtr cannot be NULL.\n");
+
+		return;
+	}
+	if (parameterStructArray == NULL)
+	{
+		fprintf(stderr, "Error: UxHwFloatGenerateConvergingPath - parameterStructArray cannot be NULL.\n");
+
+		return;
+	}
+
+	if (resultArray == NULL)
+	{
+		fprintf(stderr, "Error: UxHwFloatGenerateConvergingPath - resultArray cannot be NULL.\n");
+
+		return;
+	}
+	for (size_t opt = 0; opt < numberOfParameterStructs; opt++)
+	{
+		if (resultArray[opt] == NULL)
+		{
+			fprintf(stderr, "Error: UxHwFloatGenerateConvergingPath - resultArray cannot contain NULL.\n");
+
+			return;
+		}
+	}
+
+	/*
+	 *	Allocate the "working" array
+	 */
+	paths = (float **)calloc(maxPathLength, sizeof(float *));
+	if (paths == NULL)
+	{
+		fprintf(stderr, "Error: UxHwFloatGenerateConvergingPath - Could not allocate memory for buffer.\n");
+
+		return;
+	}
+	for (size_t step = 0; step < maxPathLength; step++)
+	{
+		paths[step] = (float *)calloc(numberOfStateVariables, sizeof(float));
+		if (paths[step] == NULL)
+		{
+			fprintf(stderr, "Error: UxHwFloatGenerateConvergingPath - Could not allocate memory for buffer.\n");
+
+			return;
+		}
+	}
+
+	/*
+	 *	Loop through each set of parameters
+	 */
+	for (size_t ii = 0; ii < numberOfParameterStructs; ii++)
+	{
+		/*
+		 *	Call the stepping function the required number of times
+		 */
+		for (size_t step = 0; step < maxPathLength; step++)
+		{
+			if (stateGeneratorFuncPtr(parameterStructArray[ii], paths, step, numberOfStateVariables))
+			{
+				/*
+				 *	Function is indicating it has converged
+				 */
+				resultArray[ii] = paths[step];
+
+				break;
+			}
+
+			if (step == maxPathLength-1)
+			{
+				/*
+				 *	Function has failed to converge - return the final step
+				 */
+				resultArray[ii] = paths[step];
+			}
+		}
+	}
+
+	for (size_t step = 0; step < maxPathLength; step++)
+	{
+		free(paths[step]);
+	}
+	free(paths);
+}
+
+void
+UxHwDoubleGenerateConvergingPath(
+	void *		parameterStructArray[],
+	size_t		numberOfParameterStructs,
+	size_t		maxPathLength,
+	size_t		numberOfStateVariables,
+	bool		(*stateGeneratorFuncPtr)(void *  parameterStruct, double **  paths, size_t iterationStepCount, size_t numberOfStateVariables),
+	double **	resultArray)
+{
+	double **	paths;
+
+	/*
+	 *	Sanity checking	of input arguments
+	 */
+	if (maxPathLength == 0)
+	{
+		fprintf(stderr, "Error: UxHwDoubleGenerateConvergingPath - Function must be called with a maxPathLength greater than 0.\n");
+
+		return;
+	}
+	if (numberOfStateVariables == 0)
+	{
+		fprintf(stderr, "Error: UxHwDoubleGenerateConvergingPath - Function must be called with numberOfStateVariables greater than 0.\n");
+
+		return;
+	}
+	if (numberOfParameterStructs == 0)
+	{
+		fprintf(stderr, "Error: UxHwDoubleGenerateConvergingPath - Function must be called with numberOfParameterStructs greater than 0.\n");
+
+		return;
+	}
+	if (stateGeneratorFuncPtr == NULL)
+	{
+		fprintf(stderr, "Error: UxHwDoubleGenerateConvergingPath - stateGeneratorFuncPtr cannot be NULL.\n");
+
+		return;
+	}
+	if (parameterStructArray == NULL)
+	{
+		fprintf(stderr, "Error: UxHwDoubleGenerateConvergingPath - parameterStructArray cannot be NULL.\n");
+
+		return;
+	}
+
+	if (resultArray == NULL)
+	{
+		fprintf(stderr, "Error: UxHwDoubleGenerateConvergingPath - resultArray cannot be NULL.\n");
+
+		return;
+	}
+	for (size_t opt = 0; opt < numberOfParameterStructs; opt++)
+	{
+		if (resultArray[opt] == NULL)
+		{
+			fprintf(stderr, "Error: UxHwDoubleGenerateConvergingPath - resultArray cannot contain NULL.\n");
+
+			return;
+		}
+	}
+
+	/*
+	 *	Allocate the "working" array
+	 */
+	paths = (double **)calloc(maxPathLength, sizeof(double *));
+	if (paths == NULL)
+	{
+		fprintf(stderr, "Error: UxHwDoubleGenerateConvergingPath - Could not allocate memory for buffer.\n");
+
+		return;
+	}
+	for (size_t step = 0; step < maxPathLength; step++)
+	{
+		paths[step] = (double *)calloc(numberOfStateVariables, sizeof(double));
+		if (paths[step] == NULL)
+		{
+			fprintf(stderr, "Error: UxHwDoubleGenerateConvergingPath - Could not allocate memory for buffer.\n");
+
+			return;
+		}
+	}
+
+	/*
+	 *	Loop through each set of parameters
+	 */
+	for (size_t ii = 0; ii < numberOfParameterStructs; ii++)
+	{
+		/*
+		 *	Call the stepping function the required number of times
+		 */
+		for (size_t step = 0; step < maxPathLength; step++)
+		{	
+
+			printf("About to check step %zu \n", step);
+			if (stateGeneratorFuncPtr(parameterStructArray[ii], paths, step, numberOfStateVariables))
+			{
+				/*
+				 *	Function is indicating it has converged
+				 */
+				
+				for (size_t i = 0; i < numberOfStateVariables; i++)
+				{
+					resultArray[ii][i] = paths[step][i];
+				}
+
+				for (size_t step = 0; step < maxPathLength; step++)
+				{
+					free(paths[step]);
+				}
+				free(paths);
+
+				break;
+			}
+
+			if (step == maxPathLength-1)
+			{
+				/*
+				 *	Function has failed to converge - return the final step
+				 */
+				for (size_t i = 0; i < numberOfStateVariables; i++)
+				{
+					resultArray[ii][i] = paths[step][i];
+				}
+			}
+		}
+	}
+
+	for (size_t step = 0; step < maxPathLength; step++)
+	{
+		free(paths[step]);
+	}
+	free(paths);
+}
+
+void UxHwFloatPropagateFunction(
+	void 		(*functionPtr)(void *  args, float *  input, size_t sizeOfInput, float *  output, size_t sizeOfOutput),
+ 	void *  	args, 
+	float *  	input, 
+	size_t 		sizeOfInput, 
+	float *  	output, 
+	size_t 		sizeOfOutput)
+{
+	functionPtr(args, input, sizeOfInput, output, sizeOfOutput);
+}
+
+void UxHwDoublePropagateFunction(
+	void 		(*functionPtr)(void *  args, double *  input, size_t sizeOfInput, double *  output, size_t sizeOfOutput),
+ 	void *  	args, 
+	double *  	input, 
+	size_t 		sizeOfInput, 
+	double *  	output, 
+	size_t 		sizeOfOutput)
+{
+	functionPtr(args, input, sizeOfInput, output, sizeOfOutput);
 }

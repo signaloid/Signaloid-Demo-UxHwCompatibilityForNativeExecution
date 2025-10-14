@@ -1,3 +1,4 @@
+
 /*
  *	Copyright (c) 2023–2024, Signaloid.
  *
@@ -21,6 +22,7 @@
  */
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 /*
  *	Link to UxHw API documentation: https://docs.signaloid.io/docs/hardware-api/.
@@ -117,12 +119,81 @@ float	UxHwFloatLimitDistributionSupport(float value, float supportMin, float sup
 double	UxHwDoubleQuantile(double value, double quantileProbability);
 float	UxHwFloatQuantile(float value, float quantileProbability);
 
-double	UxHwDoubleBayesLaplace(double (*likelihood)(double), double prior, double evidence);
-float	UxHwFloatBayesLaplace(float (*likelihood)(float), float prior, float evidence);
+double	UxHwDoubleBayesLaplace(double (*evidenceModel)(void *, double), void *  evidenceModelArgs, double prior, double evidence);
+float	UxHwFloatBayesLaplace(float (*evidenceModel)(void *, float), void *  evidenceModelArgs, float prior, float evidence);
 
 #define min(a, b)	((a) < (b) ? (a) : (b))
 #define max(a, b)	((a) > (b) ? (a) : (b))
 
 #ifdef __cplusplus
-}
+extern "C"
 #endif
+void
+UxHwFloatGeneratePath(
+	void *		parameterStructArray[],
+	size_t		numberOfParameterStructs,
+	size_t		pathLength,
+	size_t		numberOfStateVariables,
+	void		(*stateGeneratorFuncPtr)(void *  parameterStruct, float **  paths, size_t iterationStepCount, size_t numberOfStateVariables),
+	float ***	resultArray);
+
+#ifdef __cplusplus
+extern "C"
+#endif
+void
+UxHwDoubleGeneratePath(
+	void *		parameterStructArray[],
+	size_t		numberOfParameterStructs,
+	size_t		pathLength,
+	size_t		numberOfStateVariables,
+	void		(*stateGeneratorFuncPtr)(void *  parameterStruct, double **  paths, size_t iterationStepCount, size_t numberOfStateVariables),
+	double ***	resultArray);
+
+#ifdef __cplusplus
+extern "C"
+#endif
+void
+UxHwFloatGenerateConvergingPath(
+	void *		parameterStructArray[],
+	size_t		numberOfParameterStructs,
+	size_t		maxPathLength,
+	size_t		numberOfStateVariables,
+	bool		(*stateGeneratorFuncPtr)(void *  parameterStruct, float **  paths, size_t iterationStepCount, size_t numberOfStateVariables),
+	float **	resultArray);
+
+#ifdef __cplusplus
+extern "C"
+#endif
+void
+UxHwDoubleGenerateConvergingPath(
+	void *		parameterStructArray[],
+	size_t		numberOfParameterStructs,
+	size_t		maxPathLength,
+	size_t		numberOfStateVariables,
+	bool		(*stateGeneratorFuncPtr)(void *  parameterStruct, double **  paths, size_t iterationStepCount, size_t numberOfStateVariables),
+	double **	resultArray);
+
+#ifdef __cplusplus
+extern "C"
+#endif
+void
+UxHwFloatPropagateFunction(
+	void 		(*functionPtr)(void *  args, float *  input, size_t sizeOfInput, float *  output, size_t sizeOfOutput),
+ 	void *  	args, 
+	float *  	input, 
+	size_t 		sizeOfInput, 
+	float *  	output, 
+	size_t 		sizeOfOutput);
+
+#ifdef __cplusplus
+extern "C"
+#endif
+void 
+UxHwDoublePropagateFunction(
+	void 		(*functionPtr)(void *  args, double *  input, size_t sizeOfInput, double *  output, size_t sizeOfOutput),
+ 	void *  	args, 
+	double *  	input, 
+	size_t 		sizeOfInput, 
+	double *  	output, 
+	size_t 		sizeOfOutput);
+
