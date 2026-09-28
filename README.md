@@ -2,7 +2,7 @@
 Stubs for UxHw functions so that developers can compile against UxHw API[^1] on non-uncertainty-tracking hardware.
 The compatibility version of the UxHw API implements all available UxHw functions and uses GNU Scientific Library (GSL)[^2] to generate random samples
 from parametric distributions. It also uses GSL to draw samples from empirical distributions provided as user input.
-You can use `UxHwCompatibilityForNativeExecution` to implement native Monte Carlo implementations in order to quantify the benefit of running an application 
+You can use `UxHwCompatibilityForNativeExecution` to implement native Monte Carlo implementations in order to quantify the benefit of running an application
 on Signaloid's platform compared to running the same application on conventional architectures, without the need to modify the application source code.
 
 ## Usage
