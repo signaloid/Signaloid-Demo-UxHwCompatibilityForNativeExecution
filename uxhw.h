@@ -1,5 +1,5 @@
 /*
- *	Copyright (c) 2023–2024, Signaloid.
+ *	Copyright (c) 2023–2026, Signaloid.
  *
  *	Permission is hereby granted, free of charge, to any person obtaining a copy
  *	of this software and associated documentation files (the "Software"), to deal
@@ -19,6 +19,9 @@
  *	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *	SOFTWARE.
  */
+#ifndef UXHW_H
+#define UXHW_H
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -247,6 +250,17 @@ UxHwDoubleBayesLaplace(double ( * statisticalModel )(void *, double), void * mod
 float
 UxHwFloatBayesLaplace(float ( * statisticalModel )(void *, float), void * modelParams, float prior, float observedData, size_t numberOfObservations);
 
+/*
+ *	The partial derivative of `value`, `orders[i]` times with respect to `variables[i]` (distributions
+ *	created directly, not computed), as a distribution: same atoms and masses, each position replaced by
+ *	that atom's derivative. NaN when unavailable, e.g. when `value` was already read (printed, mean taken) before this call.
+ */
+double
+UxHwDoubleDerivative(double value, double *  variables, const uint8_t *  orders, size_t numberOfVariables);
+
+float
+UxHwFloatDerivative(float value, float *  variables, const uint8_t *  orders, size_t numberOfVariables);
+
 double
 UxHwDoubleArgmin(double functionOutput, double *  argumentArray, size_t numberOfArguments, double *  minimizingArgumentInstanceArray);
 
@@ -263,8 +277,13 @@ UxHwFloatArgminTotallyCorrelatedInputs(float functionOutput, float *  argumentAr
 }
 #endif
 
-#define min(a, b)   ((a) < (b) ? (a) : (b))
-#define max(a, b)   ((a) > (b) ? (a) : (b))
+#ifndef min
+ #define min(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
+#ifndef max
+ #define max(a, b) ((a) > (b) ? (a) : (b))
+#endif
 
 #ifdef __cplusplus
 extern "C"
@@ -324,7 +343,7 @@ extern "C"
 
 void
 UxHwFloatPropagateFunction(
-	void ( * functionPtr )(void * args, float *  input, size_t sizeOfInput, float *  output, size_t sizeOfOutput),
+	void ( * functionPtr )(void * args, float * input, size_t sizeOfInput, float * output, size_t sizeOfOutput),
 	void *      args,
 	float *     input,
 	size_t sizeOfInput,
@@ -337,9 +356,11 @@ extern "C"
 
 void
 UxHwDoublePropagateFunction(
-	void ( * functionPtr )(void * args, double *  input, size_t sizeOfInput, double *  output, size_t sizeOfOutput),
+	void ( * functionPtr )(void * args, double * input, size_t sizeOfInput, double * output, size_t sizeOfOutput),
 	void *      args,
 	double *    input,
 	size_t sizeOfInput,
 	double *    output,
 	size_t sizeOfOutput);
+
+#endif /* UXHW_H */

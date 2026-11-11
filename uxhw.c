@@ -1,5 +1,5 @@
 /*
- *	Copyright (c) 2023–2024, Signaloid.
+ *	Copyright (c) 2023–2026, Signaloid.
  *
  *	Permission is hereby granted, free of charge, to any person obtaining a copy
  *	of this software and associated documentation files (the "Software"), to deal
@@ -27,59 +27,69 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <time.h>
-#include <stddef.h>
+#include <string.h>
 #include <sys/time.h>
+#include <sys/types.h>
 #include "uxhw.h"
 
-gsl_rng * gGSLr;
+enum
+{
+	kMicrosecondsPerSecond = 1000000,
+};
+
+static gsl_rng * gGSLr;
 
 /**
- *	@brief	Initializes the libGSL random number generator. Uses current time to initialize the seed.
+ *	@brief	Initializes the libGSL random number generator. The generator type and seed
+ *		can be set with the GSL_RNG_TYPE and GSL_RNG_SEED environment variables.
+ *		If GSL_RNG_SEED is not set, the seed comes from the current time.
  *
  */
 static void
 initializeGenerators(void)
 {
-	struct timeval          t;
-	const gsl_rng_type *    gslRngType = gsl_rng_default;
-
-	gettimeofday(&t, NULL);
-	srandom(t.tv_usec);
-
+	/*
+	 *	gsl_rng_env_setup() reads GSL_RNG_TYPE and GSL_RNG_SEED into
+	 *	gsl_rng_default and gsl_rng_default_seed, so gsl_rng_default must be
+	 *	read after it. gsl_rng_alloc() seeds with gsl_rng_default_seed.
+	 */
 	gsl_rng_env_setup();
-	gGSLr = gsl_rng_alloc(gslRngType);
-	gettimeofday(&t, NULL);
-	gsl_rng_set(gGSLr, t.tv_usec);
+	gGSLr = gsl_rng_alloc(gsl_rng_default);
+
+	if (getenv("GSL_RNG_SEED") == NULL)
+	{
+		struct timeval t = { .tv_sec = 0, .tv_usec = 0 };
+
+		gettimeofday(&t, NULL);
+		gsl_rng_set(gGSLr, (unsigned long) t.tv_sec * kMicrosecondsPerSecond + (unsigned long) t.tv_usec);
+	}
 
 	return;
 }
 
 /**
- *	@brief	Returns a random integer in the interval [0,`n`).
+ *	@brief	Returns a random index in the interval [0,`n`).
  *
- * 	@param	n	: The upper bound of the interval of the possible integers to be returned.
- * 	@return	int	: Returns an integer `i`, where 0 <= `i` < `n`.
+ *	@param	n	: The upper bound of the interval of the possible indices to be returned.
+ *	@return	ssize_t	: Returns an index `i`, where 0 <= `i` < `n`. Returns -1 if `n` is 0
+ *			  or exceeds the range of the random number generator.
  */
-static int
-randomFromRange(int n)
+static ssize_t
+randomFromRange(size_t n)
 {
-	int limit;
-	int r;
-
 	if (!gGSLr)
 	{
 		initializeGenerators();
 	}
 
-	limit = RAND_MAX - (RAND_MAX % n);
+	const unsigned long generatorRange = gsl_rng_max(gGSLr) - gsl_rng_min(gGSLr);
 
-	while ((r = random()) >= limit)
+	if ((n == 0) || (n > generatorRange))
 	{
-		/* Rejection sampling: discard values that would cause modulo bias. */
+		return -1;
 	}
 
-	return r % n;
+	return (ssize_t) gsl_rng_uniform_int(gGSLr, n);
 }
 
 double
@@ -133,23 +143,45 @@ UxHwFloatSampleBatch(float value, float *  destSampleArray, size_t numberOfRando
 double
 UxHwDoubleDistFromSamples(double * samples, size_t sampleCount)
 {
-	if (!gGSLr)
+	if (samples == NULL)
 	{
-		initializeGenerators();
+		fprintf(stderr, "UxHwDoubleDistFromSamples: samples is NULL. Returning NAN...\n");
+
+		return NAN;
 	}
 
-	return samples[randomFromRange(sampleCount)];
+	const ssize_t randomIndex = randomFromRange(sampleCount);
+
+	if (randomIndex < 0)
+	{
+		fprintf(stderr, "UxHwDoubleDistFromSamples: sampleCount is 0 or too large. Returning NAN...\n");
+
+		return NAN;
+	}
+
+	return samples[randomIndex];
 }
 
 float
 UxHwFloatDistFromSamples(float * samples, size_t sampleCount)
 {
-	if (!gGSLr)
+	if (samples == NULL)
 	{
-		initializeGenerators();
+		fprintf(stderr, "UxHwFloatDistFromSamples: samples is NULL. Returning NAN...\n");
+
+		return NAN;
 	}
 
-	return samples[randomFromRange(sampleCount)];
+	const ssize_t randomIndex = randomFromRange(sampleCount);
+
+	if (randomIndex < 0)
+	{
+		fprintf(stderr, "UxHwFloatDistFromSamples: sampleCount is 0 or too large. Returning NAN...\n");
+
+		return NAN;
+	}
+
+	return samples[randomIndex];
 }
 
 double
@@ -158,21 +190,57 @@ UxHwDoubleDistFromWeightedSamples(WeightedDoubleSample * samples, size_t weighte
 	double *    normalizedCumulativeWeights;
 	double      weightSum = 0.0;
 	double      probability;
-	size_t      index;
+	size_t      index = 0;
+
+	if (samples == NULL)
+	{
+		fprintf(stderr, "UxHwDoubleDistFromWeightedSamples: samples is NULL. Returning NAN...\n");
+
+		return NAN;
+	}
+
+	if (weightedSampleCount == 0)
+	{
+		fprintf(stderr, "UxHwDoubleDistFromWeightedSamples: weightedSampleCount is 0. Returning NAN...\n");
+
+		return NAN;
+	}
 
 	normalizedCumulativeWeights = (double *) malloc(weightedSampleCount * sizeof(double));
 
 	if (normalizedCumulativeWeights == NULL)
 	{
-		fprintf(stderr, "UxHwDoubleDistFromWeightedSamples: malloc failed. Returning NAN...");
+		fprintf(stderr, "UxHwDoubleDistFromWeightedSamples: malloc failed. Returning NAN...\n");
 
 		return NAN;
 	}
 
 	for (size_t ii = 0; ii < weightedSampleCount; ii++)
 	{
+		if ((samples[ii].sampleWeight < 0.0) || !isfinite(samples[ii].sampleWeight))
+		{
+			fprintf(stderr, "UxHwDoubleDistFromWeightedSamples: weights must be finite and non-negative. Returning NAN...\n");
+			free(normalizedCumulativeWeights);
+
+			return NAN;
+		}
+
 		weightSum += samples[ii].sampleWeight;
 		normalizedCumulativeWeights[ii] = weightSum;
+	}
+
+	/*
+	 *	A positive, finite sum makes the last cumulative weight exactly 1.0
+	 *	after normalization. probability is in [0, 1), so the search below
+	 *	always sets index. The strict comparison never picks a zero-weight
+	 *	sample.
+	 */
+	if ((weightSum <= 0.0) || !isfinite(weightSum))
+	{
+		fprintf(stderr, "UxHwDoubleDistFromWeightedSamples: sum of weights must be positive and finite. Returning NAN...\n");
+		free(normalizedCumulativeWeights);
+
+		return NAN;
 	}
 
 	if (!gGSLr)
@@ -186,7 +254,7 @@ UxHwDoubleDistFromWeightedSamples(WeightedDoubleSample * samples, size_t weighte
 	{
 		normalizedCumulativeWeights[ii] /= weightSum;
 
-		if (probability <= normalizedCumulativeWeights[ii])
+		if (probability < normalizedCumulativeWeights[ii])
 		{
 			index = ii;
 			break;
@@ -203,22 +271,59 @@ UxHwFloatDistFromWeightedSamples(WeightedFloatSample * samples, size_t weightedS
 {
 	float * normalizedCumulativeWeights;
 	float   weightSum = 0.0;
-	float   probability;
-	size_t  index;
+	double  probability;
+	size_t  index = 0;
+
+	if (samples == NULL)
+	{
+		fprintf(stderr, "UxHwFloatDistFromWeightedSamples: samples is NULL. Returning NAN...\n");
+
+		return NAN;
+	}
+
+	if (weightedSampleCount == 0)
+	{
+		fprintf(stderr, "UxHwFloatDistFromWeightedSamples: weightedSampleCount is 0. Returning NAN...\n");
+
+		return NAN;
+	}
 
 	normalizedCumulativeWeights = (float *) malloc(weightedSampleCount * sizeof(float));
 
 	if (normalizedCumulativeWeights == NULL)
 	{
-		fprintf(stderr, "UxHwFloatDistFromWeightedSamples: malloc failed. Returning NAN...");
+		fprintf(stderr, "UxHwFloatDistFromWeightedSamples: malloc failed. Returning NAN...\n");
 
 		return NAN;
 	}
 
 	for (size_t ii = 0; ii < weightedSampleCount; ii++)
 	{
+		if ((samples[ii].sampleWeight < 0.0f) || !isfinite(samples[ii].sampleWeight))
+		{
+			fprintf(stderr, "UxHwFloatDistFromWeightedSamples: weights must be finite and non-negative. Returning NAN...\n");
+			free(normalizedCumulativeWeights);
+
+			return NAN;
+		}
+
 		weightSum += samples[ii].sampleWeight;
 		normalizedCumulativeWeights[ii] = weightSum;
+	}
+
+	/*
+	 *	A positive, finite sum makes the last cumulative weight exactly 1.0
+	 *	after normalization. probability is in [0, 1), so the search below
+	 *	always sets index. The strict comparison never picks a zero-weight
+	 *	sample. probability is a double, because rounding it to float could
+	 *	give exactly 1.0.
+	 */
+	if ((weightSum <= 0.0f) || !isfinite(weightSum))
+	{
+		fprintf(stderr, "UxHwFloatDistFromWeightedSamples: sum of weights must be positive and finite. Returning NAN...\n");
+		free(normalizedCumulativeWeights);
+
+		return NAN;
 	}
 
 	if (!gGSLr)
@@ -232,7 +337,7 @@ UxHwFloatDistFromWeightedSamples(WeightedFloatSample * samples, size_t weightedS
 	{
 		normalizedCumulativeWeights[ii] /= weightSum;
 
-		if (probability <= normalizedCumulativeWeights[ii])
+		if (probability < normalizedCumulativeWeights[ii])
 		{
 			index = ii;
 			break;
@@ -247,15 +352,22 @@ UxHwFloatDistFromWeightedSamples(WeightedFloatSample * samples, size_t weightedS
 void
 UxHwDoubleDistFromMultidimensionalSamples(double * destinationArray, void *  samples, size_t sampleCount, size_t sampleCardinality)
 {
-	double * *  castSamples = (double * *) samples;
-	size_t      randomIndex;
-
-	if (!gGSLr)
+	if ((destinationArray == NULL) || (samples == NULL))
 	{
-		initializeGenerators();
+		fprintf(stderr, "UxHwDoubleDistFromMultidimensionalSamples: destinationArray or samples is NULL.\n");
+
+		return;
 	}
 
-	randomIndex = randomFromRange(sampleCount);
+	double * *      castSamples = (double * *) samples;
+	const ssize_t   randomIndex = randomFromRange(sampleCount);
+
+	if (randomIndex < 0)
+	{
+		fprintf(stderr, "UxHwDoubleDistFromMultidimensionalSamples: sampleCount is 0 or too large.\n");
+
+		return;
+	}
 
 	for (size_t ii = 0; ii < sampleCardinality; ii++)
 	{
@@ -268,15 +380,22 @@ UxHwDoubleDistFromMultidimensionalSamples(double * destinationArray, void *  sam
 void
 UxHwFloatDistFromMultidimensionalSamples(float * destinationArray, void *  samples, size_t sampleCount, size_t sampleCardinality)
 {
-	float * *   castSamples = (float * *) samples;
-	size_t      randomIndex;
-
-	if (!gGSLr)
+	if ((destinationArray == NULL) || (samples == NULL))
 	{
-		initializeGenerators();
+		fprintf(stderr, "UxHwFloatDistFromMultidimensionalSamples: destinationArray or samples is NULL.\n");
+
+		return;
 	}
 
-	randomIndex = randomFromRange(sampleCount);
+	float * *       castSamples = (float * *) samples;
+	const ssize_t   randomIndex = randomFromRange(sampleCount);
+
+	if (randomIndex < 0)
+	{
+		fprintf(stderr, "UxHwFloatDistFromMultidimensionalSamples: sampleCount is 0 or too large.\n");
+
+		return;
+	}
 
 	for (size_t ii = 0; ii < sampleCardinality; ii++)
 	{
@@ -289,6 +408,11 @@ UxHwFloatDistFromMultidimensionalSamples(float * destinationArray, void *  sampl
 double
 UxHwDoubleExponentialDist(double mu)
 {
+	if (mu < 0.0)
+	{
+		return NAN;
+	}
+
 	if (!gGSLr)
 	{
 		initializeGenerators();
@@ -306,6 +430,16 @@ UxHwFloatExponentialDist(float mu)
 double
 UxHwDoubleGumbel1Dist(double mu, double beta)
 {
+	if (beta < 0.0)
+	{
+		return NAN;
+	}
+
+	if (beta == 0.0)
+	{
+		return mu;
+	}
+
 	if (!gGSLr)
 	{
 		initializeGenerators();
@@ -323,6 +457,11 @@ UxHwFloatGumbel1Dist(float mu, float beta)
 double
 UxHwDoubleUniformDist(double a, double b)
 {
+	if (a > b)
+	{
+		return NAN;
+	}
+
 	if (!gGSLr)
 	{
 		initializeGenerators();
@@ -341,6 +480,11 @@ double
 UxHwDoubleGaussDist(double mu, double sigma)
 {
 	double sample;
+
+	if (sigma < 0.0)
+	{
+		return NAN;
+	}
 
 	if (!gGSLr)
 	{
@@ -363,6 +507,11 @@ UxHwDoubleLogisticDist(double location, double scale)
 {
 	double sample;
 
+	if (scale < 0.0)
+	{
+		return NAN;
+	}
+
 	if (!gGSLr)
 	{
 		initializeGenerators();
@@ -384,6 +533,11 @@ UxHwDoubleLaplaceDist(double mu, double b)
 {
 	double sample;
 
+	if (b < 0.0)
+	{
+		return NAN;
+	}
+
 	if (!gGSLr)
 	{
 		initializeGenerators();
@@ -403,6 +557,11 @@ UxHwFloatLaplaceDist(float mu, float b)
 double
 UxHwDoubleWeibullDist(double k, double lambda)
 {
+	if ((k <= 0.0) || (lambda < 0.0))
+	{
+		return NAN;
+	}
+
 	if (!gGSLr)
 	{
 		initializeGenerators();
@@ -420,6 +579,11 @@ UxHwFloatWeibullDist(float k, float lambda)
 double
 UxHwDoubleLognormalDist(double mu, double sigma)
 {
+	if (sigma < 0.0)
+	{
+		return NAN;
+	}
+
 	if (!gGSLr)
 	{
 		initializeGenerators();
@@ -439,14 +603,52 @@ UxHwDoubleBoundedparetoDist(double alpha, double xMin, double xMax)
 {
 	double sample = xMax;
 
+	/*
+	 *	Reject parameters outside the support of the distribution.
+	 */
+	if ((alpha <= 0.0) || (xMin <= 0.0) || (xMax <= xMin))
+	{
+		return NAN;
+	}
+
 	if (!gGSLr)
 	{
 		initializeGenerators();
 	}
 
+	/*
+	 *	Inverse-CDF sampling, so one draw is enough even when xMax is close to
+	 *	xMin or alpha is small. supportMass is 1 - (xMin / xMax)^alpha. expm1()
+	 *	and log1p() keep precision when it is close to 0. Rounding can still give
+	 *	a value at or above xMax, so draw again in that case.
+	 *
+	 *	log(xMin / xMax) is the most accurate form when xMax is close to xMin.
+	 *	If the ratio is subnormal or underflows to 0, use the difference of the
+	 *	logs instead.
+	 */
+	const double    supportRatio    = xMin / xMax;
+	const double    logSupportRatio = (supportRatio >= DBL_MIN) ? log(supportRatio) : (log(xMin) - log(xMax));
+	const double    supportMass     = -expm1(alpha * logSupportRatio);
+
 	while (sample >= xMax)
 	{
-		sample = gsl_ran_pareto(gGSLr, alpha, xMin);
+		const double    uniformSample   = gsl_rng_uniform(gGSLr);
+		const double    logGrowth       = -log1p(-uniformSample * supportMass) / alpha;
+		const double    growth          = exp(logGrowth);
+
+		/*
+		 *	The sample is xMin * exp(logGrowth). exp() can overflow even when
+		 *	the sample is finite, so in that case add the logs instead. The
+		 *	product is kept otherwise, as it is the more accurate form near xMin.
+		 */
+		if (isinf(growth))
+		{
+			sample = exp(log(xMin) + logGrowth);
+		}
+		else
+		{
+			sample = xMin * growth;
+		}
 	}
 
 	return sample;
@@ -656,7 +858,7 @@ UxHwDoubleMixture(double a, double b, double aScale)
 		initializeGenerators();
 	}
 
-	if (random() < aScale * RAND_MAX)
+	if (gsl_rng_uniform(gGSLr) < aScale)
 	{
 		return a;
 	}
@@ -672,7 +874,7 @@ UxHwFloatMixture(float a, float b, float aScale)
 		initializeGenerators();
 	}
 
-	if (random() < aScale * RAND_MAX)
+	if (gsl_rng_uniform(gGSLr) < aScale)
 	{
 		return a;
 	}
@@ -683,6 +885,11 @@ UxHwFloatMixture(float a, float b, float aScale)
 double
 UxHwDoubleNthMoment(double value, size_t n)
 {
+	if (n == 0)
+	{
+		return 1.0;
+	}
+
 	if (n == 1)
 	{
 		return value;
@@ -694,6 +901,11 @@ UxHwDoubleNthMoment(double value, size_t n)
 float
 UxHwFloatNthMoment(float value, size_t n)
 {
+	if (n == 0)
+	{
+		return 1.0;
+	}
+
 	if (n == 1)
 	{
 		return value;
@@ -705,12 +917,16 @@ UxHwFloatNthMoment(float value, size_t n)
 double
 UxHwDoubleNthMode(double value, size_t n)
 {
+	(void) n;
+
 	return value;
 }
 
 float
 UxHwFloatNthMode(float value, size_t n)
 {
+	(void) n;
+
 	return value;
 }
 
@@ -765,6 +981,13 @@ UxHwFloatGetIndependentCopy(float value)
 void
 UxHwDoubleGetIndependentJointMultidimensionalCopy(double * srcDistArray, double *  destDistArray, size_t numberOfDistributions)
 {
+	if ((srcDistArray == NULL) || (destDistArray == NULL))
+	{
+		fprintf(stderr, "UxHwDoubleGetIndependentJointMultidimensionalCopy: srcDistArray or destDistArray is NULL.\n");
+
+		return;
+	}
+
 	for (size_t ii = 0; ii < numberOfDistributions; ii++)
 	{
 		destDistArray[ii] = srcDistArray[ii];
@@ -776,6 +999,13 @@ UxHwDoubleGetIndependentJointMultidimensionalCopy(double * srcDistArray, double 
 void
 UxHwFloatGetIndependentJointMultidimensionalCopy(float * srcDistArray, float *  destDistArray, size_t numberOfDistributions)
 {
+	if ((srcDistArray == NULL) || (destDistArray == NULL))
+	{
+		fprintf(stderr, "UxHwFloatGetIndependentJointMultidimensionalCopy: srcDistArray or destDistArray is NULL.\n");
+
+		return;
+	}
+
 	for (size_t ii = 0; ii < numberOfDistributions; ii++)
 	{
 		destDistArray[ii] = srcDistArray[ii];
@@ -809,12 +1039,16 @@ UxHwFloatLimitDistributionSupport(float value, float supportMin, float supportMa
 double
 UxHwDoubleQuantile(double value, double probability)
 {
+	(void) probability;
+
 	return value;
 }
 
 float
 UxHwFloatQuantile(float value, float probability)
 {
+	(void) probability;
+
 	return value;
 }
 
@@ -847,7 +1081,12 @@ UxHwFloatEvaluatePDF(float value, float domainValue)
 double
 UxHwDoubleBayesLaplace(double ( * statisticalModel )(void *, double), void * modelParams, double prior, double observedData, size_t numberOfObservations)
 {
-	fprintf(stderr, "Warning: UxHwDoubleBayesLaplace is not supported in native execution mode! Returning prior...");
+	(void) statisticalModel;
+	(void) modelParams;
+	(void) observedData;
+	(void) numberOfObservations;
+
+	fprintf(stderr, "Warning: UxHwDoubleBayesLaplace is not supported in native execution mode! Returning prior...\n");
 
 	return prior;
 }
@@ -855,9 +1094,41 @@ UxHwDoubleBayesLaplace(double ( * statisticalModel )(void *, double), void * mod
 float
 UxHwFloatBayesLaplace(float ( * statisticalModel )(void *, float), void * modelParams, float prior, float observedData, size_t numberOfObservations)
 {
-	fprintf(stderr, "Warning: UxHwFloatBayesLaplace is not supported in native execution mode! Returning prior...");
+	(void) statisticalModel;
+	(void) modelParams;
+	(void) observedData;
+	(void) numberOfObservations;
+
+	fprintf(stderr, "Warning: UxHwFloatBayesLaplace is not supported in native execution mode! Returning prior...\n");
 
 	return prior;
+}
+
+/*
+ *	Native execution carries no distributions to differentiate, so the
+ *	derivative is unavailable and the stub returns NaN, as the platform
+ *	does when a derivative is unavailable.
+ */
+double
+UxHwDoubleDerivative(double value, double *  variables, const uint8_t *  orders, size_t numberOfVariables)
+{
+	(void) value;
+	(void) variables;
+	(void) orders;
+	(void) numberOfVariables;
+
+	return NAN;
+}
+
+float
+UxHwFloatDerivative(float value, float *  variables, const uint8_t *  orders, size_t numberOfVariables)
+{
+	(void) value;
+	(void) variables;
+	(void) orders;
+	(void) numberOfVariables;
+
+	return NAN;
 }
 
 double
@@ -907,7 +1178,8 @@ UxHwDoubleArgminTotallyCorrelatedInputs(
 		functionOutput,
 		argumentArray,
 		numberOfArguments,
-		minimizingArgumentInstanceArray);
+		minimizingArgumentInstanceArray
+	);
 }
 
 float
@@ -921,7 +1193,8 @@ UxHwFloatArgminTotallyCorrelatedInputs(
 		functionOutput,
 		argumentArray,
 		numberOfArguments,
-		minimizingArgumentInstanceArray);
+		minimizingArgumentInstanceArray
+	);
 }
 
 void
@@ -934,7 +1207,7 @@ UxHwFloatGeneratePath(
 	float * * *   resultArray)
 {
 	/*
-	 *	Sanity checking	of input arguments
+	 *	Sanity checking of input arguments
 	 */
 	if (pathLength == 0)
 	{
@@ -1011,6 +1284,8 @@ UxHwFloatGeneratePath(
 			stateGeneratorFuncPtr(parameterStructArray[ii], resultArray[ii], step, numberOfStateVariables);
 		}
 	}
+
+	return;
 }
 
 void
@@ -1023,7 +1298,7 @@ UxHwDoubleGeneratePath(
 	double * * *  resultArray)
 {
 	/*
-	 *	Sanity checking	of input arguments
+	 *	Sanity checking of input arguments
 	 */
 	if (pathLength == 0)
 	{
@@ -1100,6 +1375,8 @@ UxHwDoubleGeneratePath(
 			stateGeneratorFuncPtr(parameterStructArray[ii], resultArray[ii], step, numberOfStateVariables);
 		}
 	}
+
+	return;
 }
 
 void
@@ -1114,7 +1391,7 @@ UxHwFloatGenerateConvergingPath(
 	float * * paths;
 
 	/*
-	 *	Sanity checking	of input arguments
+	 *	Sanity checking of input arguments
 	 */
 	if (maxPathLength == 0)
 	{
@@ -1188,6 +1465,13 @@ UxHwFloatGenerateConvergingPath(
 		{
 			fprintf(stderr, "Error: UxHwFloatGenerateConvergingPath - Could not allocate memory for buffer.\n");
 
+			for (size_t jj = 0; jj < step; jj++)
+			{
+				free(paths[jj]);
+			}
+
+			free(paths);
+
 			return;
 		}
 	}
@@ -1198,6 +1482,23 @@ UxHwFloatGenerateConvergingPath(
 	for (size_t ii = 0; ii < numberOfParameterStructs; ii++)
 	{
 		/*
+		 *	If the function never converges, return the final step
+		 */
+		size_t lastStep = maxPathLength - 1;
+
+		/*
+		 *	Clear the buffer so no values carry over from the previous parameter
+		 *	struct. calloc() has already cleared it for the first one.
+		 */
+		if (ii > 0)
+		{
+			for (size_t step = 0; step < maxPathLength; step++)
+			{
+				memset(paths[step], 0, numberOfStateVariables * sizeof(float));
+			}
+		}
+
+		/*
 		 *	Call the stepping function the required number of times
 		 */
 		for (size_t step = 0; step < maxPathLength; step++)
@@ -1207,19 +1508,12 @@ UxHwFloatGenerateConvergingPath(
 				/*
 				 *	Function is indicating it has converged
 				 */
-				resultArray[ii] = paths[step];
-
+				lastStep = step;
 				break;
 			}
-
-			if (step == maxPathLength - 1)
-			{
-				/*
-				 *	Function has failed to converge - return the final step
-				 */
-				resultArray[ii] = paths[step];
-			}
 		}
+
+		memcpy(resultArray[ii], paths[lastStep], numberOfStateVariables * sizeof(float));
 	}
 
 	for (size_t step = 0; step < maxPathLength; step++)
@@ -1228,6 +1522,8 @@ UxHwFloatGenerateConvergingPath(
 	}
 
 	free(paths);
+
+	return;
 }
 
 void
@@ -1242,7 +1538,7 @@ UxHwDoubleGenerateConvergingPath(
 	double * * paths;
 
 	/*
-	 *	Sanity checking	of input arguments
+	 *	Sanity checking of input arguments
 	 */
 	if (maxPathLength == 0)
 	{
@@ -1316,6 +1612,13 @@ UxHwDoubleGenerateConvergingPath(
 		{
 			fprintf(stderr, "Error: UxHwDoubleGenerateConvergingPath - Could not allocate memory for buffer.\n");
 
+			for (size_t jj = 0; jj < step; jj++)
+			{
+				free(paths[jj]);
+			}
+
+			free(paths);
+
 			return;
 		}
 	}
@@ -1326,6 +1629,23 @@ UxHwDoubleGenerateConvergingPath(
 	for (size_t ii = 0; ii < numberOfParameterStructs; ii++)
 	{
 		/*
+		 *	If the function never converges, return the final step
+		 */
+		size_t lastStep = maxPathLength - 1;
+
+		/*
+		 *	Clear the buffer so no values carry over from the previous parameter
+		 *	struct. calloc() has already cleared it for the first one.
+		 */
+		if (ii > 0)
+		{
+			for (size_t step = 0; step < maxPathLength; step++)
+			{
+				memset(paths[step], 0, numberOfStateVariables * sizeof(double));
+			}
+		}
+
+		/*
 		 *	Call the stepping function the required number of times
 		 */
 		for (size_t step = 0; step < maxPathLength; step++)
@@ -1335,32 +1655,12 @@ UxHwDoubleGenerateConvergingPath(
 				/*
 				 *	Function is indicating it has converged
 				 */
-				for (size_t jj = 0; jj < numberOfStateVariables; jj++)
-				{
-					resultArray[ii][jj] = paths[step][jj];
-				}
-
-				for (size_t step = 0; step < maxPathLength; step++)
-				{
-					free(paths[step]);
-				}
-
-				free(paths);
-
+				lastStep = step;
 				break;
 			}
-
-			if (step == maxPathLength - 1)
-			{
-				/*
-				 *	Function has failed to converge - return the final step
-				 */
-				for (size_t jj = 0; jj < numberOfStateVariables; jj++)
-				{
-					resultArray[ii][jj] = paths[step][jj];
-				}
-			}
 		}
+
+		memcpy(resultArray[ii], paths[lastStep], numberOfStateVariables * sizeof(double));
 	}
 
 	for (size_t step = 0; step < maxPathLength; step++)
@@ -1369,17 +1669,26 @@ UxHwDoubleGenerateConvergingPath(
 	}
 
 	free(paths);
+
+	return;
 }
 
 void
 UxHwFloatPropagateFunction(
-	void ( * functionPtr )(void * args, float *  input, size_t sizeOfInput, float *  output, size_t sizeOfOutput),
+	void ( * functionPtr )(void * args, float * input, size_t sizeOfInput, float * output, size_t sizeOfOutput),
 	void *      args,
 	float *     input,
 	size_t sizeOfInput,
 	float *     output,
 	size_t sizeOfOutput)
 {
+	if (functionPtr == NULL)
+	{
+		fprintf(stderr, "Error: UxHwFloatPropagateFunction - functionPtr cannot be NULL.\n");
+
+		return;
+	}
+
 	functionPtr(args, input, sizeOfInput, output, sizeOfOutput);
 
 	return;
@@ -1387,13 +1696,20 @@ UxHwFloatPropagateFunction(
 
 void
 UxHwDoublePropagateFunction(
-	void ( * functionPtr )(void * args, double *  input, size_t sizeOfInput, double *  output, size_t sizeOfOutput),
+	void ( * functionPtr )(void * args, double * input, size_t sizeOfInput, double * output, size_t sizeOfOutput),
 	void *      args,
 	double *    input,
 	size_t sizeOfInput,
 	double *    output,
 	size_t sizeOfOutput)
 {
+	if (functionPtr == NULL)
+	{
+		fprintf(stderr, "Error: UxHwDoublePropagateFunction - functionPtr cannot be NULL.\n");
+
+		return;
+	}
+
 	functionPtr(args, input, sizeOfInput, output, sizeOfOutput);
 
 	return;
